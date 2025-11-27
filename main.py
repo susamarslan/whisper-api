@@ -4,24 +4,6 @@ from tasks import transcribe_task, celery_app
 
 app = FastAPI()
 
-def format_time(seconds):
-    """Saniyeyi VTT formatına (HH:MM:SS.mmm) çevirir"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
-
-def generate_vtt(segments):
-    """Segment listesinden VTT formatı oluşturur"""
-    vtt_lines = ["WEBVTT", ""]
-    for segment in segments:
-        start_time = format_time(segment["start"])
-        end_time = format_time(segment["end"])
-        vtt_lines.append(f"{start_time} --> {end_time}")
-        vtt_lines.append(segment["text"])
-        vtt_lines.append("")
-    return "\n".join(vtt_lines)
-
 @app.post("/transcribe")
 async def transcribe(
     file: UploadFile | None = File(None),
@@ -70,4 +52,21 @@ async def get_result(job_id: str):
         return {"status": "failed", "error": str(job.info)}
     elif job.state == "SUCCESS":
         result = job.result
+        if isinstance(result, dict):
+            # segments'i chunks formatına çevir
+            chunks = []
+            if "segments" in result and result["segments"]:
+                for segment in result["segments"]:
+                    chunks.append({
+                        "timestamp": [segment.get("start", 0.0), segment.get("end", 0.0)],
+                        "text": segment.get("text", "").strip()
+                    })
+            
+            # text, chunks ve saved_file döndür
+            filtered_result = {
+                "text": result.get("text", ""),
+                "chunks": chunks,
+                "saved_file": result.get("saved_file")
+            }
+            return {"status": "done", "result": filtered_result}
         return {"status": "done", "result": result}

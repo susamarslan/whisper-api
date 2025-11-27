@@ -3,7 +3,11 @@ import tempfile
 import requests
 import os
 import shutil
+import math
 from celery import Celery
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
@@ -64,40 +68,55 @@ def transcribe_task(source, from_url=False, language=None, task="transcribe", te
         temperature=temperature
     )
     
-    # Segment bilgilerini sakla
-    segments_list = [{"start": segment.start, "end": segment.end, "text": segment.text} for segment in segments]
+    # Segments generator'ı listeye çevir (bir kez iterate edilebilir)
+    # Bu işlemi try bloğundan önce yapıyoruz ki except bloğunda kullanabilelim
+    segments_list = list(segments)
+    text = " ".join([segment.text for segment in segments_list])
     
-    # Faster-Whisper segments döndürür, bunları birleştirmemiz gerekir
-    text = " ".join([segment.text for segment in segments])
-    
-    # VTT formatı oluştur
-    def format_time(seconds):
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
-    
-    vtt_lines = ["WEBVTT", ""]
-    for segment in segments_list:
-        start_time = format_time(segment["start"])
-        end_time = format_time(segment["end"])
-        vtt_lines.append(f"{start_time} --> {end_time}")
-        vtt_lines.append(segment["text"])
-        vtt_lines.append("")
-    vtt_content = "\n".join(vtt_lines)
-    
-    # VTT dosyasını kaydet
-    vtt_file = None
-    if save:
-        base_name = os.path.splitext(os.path.basename(final_path))[0]
-        vtt_file = os.path.join(SAVE_DIR, f"{base_name}.vtt")
-        with open(vtt_file, "w", encoding="utf-8") as f:
-            f.write(vtt_content)
-    
-    return {
-        "text": text,
-        "segments": segments_list,
-        "vtt": vtt_content,
-        "saved_file": final_path if save else None,
-        "saved_vtt_file": vtt_file
-    }
+    try:
+        # Segment bilgilerini sakla
+        segments_data = [{"start": segment.start, "end": segment.end, "text": segment.text} for segment in segments_list]
+        
+        # Saniyeyi VTT zaman formatına (HH:MM:SS.mmm) çeviren fonksiyon
+        def format_timestamp(seconds):
+            hours = math.floor(seconds / 3600)
+            seconds %= 3600
+            minutes = math.floor(seconds / 60)
+            seconds %= 60
+            milliseconds = round((seconds - math.floor(seconds)) * 1000)
+            seconds = math.floor(seconds)
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+        
+        # VTT formatı oluştur (WEBVTT header olmadan)
+        vtt_lines = []
+        for segment in segments_data:
+            start_time = format_timestamp(segment["start"])
+            end_time = format_timestamp(segment["end"])
+            segment_text = segment["text"].strip()
+            vtt_lines.append(f"{start_time} --> {end_time}")
+            vtt_lines.append(f"{segment_text}")
+            vtt_lines.append("")
+        vtt_content = "\n".join(vtt_lines)
+        
+        # VTT dosyası kaydedilmiyor (kullanıcı isteği)
+        vtt_file = None
+        
+        result = {
+            "text": text,
+            "segments": segments_data,
+            "vtt": vtt_content,
+            "saved_file": final_path if save else None,
+            "saved_vtt_file": vtt_file
+        }
+        return result
+    except Exception as e:
+        # Hata durumunda logla ve sadece text döndür
+        import traceback
+        logger.error(f"VTT oluşturma hatası: {e}")
+        logger.error(traceback.format_exc())
+        # segments_list zaten yukarıda oluşturuldu, onu kullan
+        return {
+            "text": text,
+            "saved_file": final_path if save else None,
+            "error": str(e)
+        }
