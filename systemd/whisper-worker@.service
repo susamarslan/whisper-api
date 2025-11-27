@@ -1,0 +1,13 @@
+[Unit]
+Description=Whisper Celery Worker %i
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/whisper-api
+Environment="PATH=/home/ubuntu/whisper-api/venv/bin"
+ExecStart=/home/ubuntu/whisper-api/venv/bin/celery -A tasks worker --loglevel=INFO -c 4
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

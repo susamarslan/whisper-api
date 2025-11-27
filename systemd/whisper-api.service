@@ -1,0 +1,12 @@
+[Unit]
+Description=Whisper API Service
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/whisper-api
+ExecStart=/home/ubuntu/whisper-api/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

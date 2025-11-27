@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+faster-whisper
+torch
+requests
+pydub
+python-multipart
+celery
+redis

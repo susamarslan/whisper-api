@@ -1,0 +1,35 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  web:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SAVE_DIR=/var/recordings
+    volumes:
+      - recordings:/var/recordings
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: python worker.py
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SAVE_DIR=/var/recordings
+    volumes:
+      - recordings:/var/recordings
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  recordings:
+
+
